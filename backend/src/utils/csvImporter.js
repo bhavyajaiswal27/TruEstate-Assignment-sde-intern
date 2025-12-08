@@ -1,4 +1,3 @@
-// src/utils/csvImporter.js
 const axios = require("axios");
 const csv = require("csv-parser");
 const { db } = require("../config/database");
@@ -18,14 +17,14 @@ async function importCsvIfNeeded() {
       .prepare("SELECT COUNT(*) AS cnt FROM sales")
       .get();
     if (row.cnt > 0) {
-      console.log("[CSV IMPORT] sales table already populated, skipping import.");
+      console.log("[CSV IMPORT] sales table already populated, skipping import. Row count:", row.cnt);
       return;
     }
   }
 
   const csvUrl = process.env.CSV_URL;
   if (!csvUrl) {
-    throw new Error("CSV_URL is not set in .env.txt");
+    throw new Error("CSV_URL is not set in environment");
   }
 
   console.log("[CSV IMPORT] Downloading CSV from:", csvUrl);
@@ -36,7 +35,6 @@ async function importCsvIfNeeded() {
     responseType: "stream",
   });
 
-  // prepare INSERT statement (adjust column names if yours differ)
   const insertStmt = db.prepare(`
     INSERT INTO sales (
       transaction_id,
@@ -106,11 +104,12 @@ async function importCsvIfNeeded() {
 
   await new Promise((resolve, reject) => {
     const batch = [];
+    let count = 0;
 
     response.data
       .pipe(csv())
       .on("data", (raw) => {
-        // Map CSV headers → DB column names (adjust names to match CSV exactly)
+        // Map CSV headers exactly as they appear in your CSV
         const row = {
           transaction_id: raw["Transaction ID"],
           date: raw["Date"],
@@ -124,7 +123,7 @@ async function importCsvIfNeeded() {
           product_id: raw["Product ID"],
           product_name: raw["Product Name"],
           brand: raw["Brand"],
-          product_category: raw["Category"],
+          product_category: raw["Category"],      // check header name
           tags: raw["Tags"],
           quantity: Number(raw["Quantity"]) || 0,
           price_per_unit: Number(raw["Price per Unit"]) || 0,
@@ -133,7 +132,7 @@ async function importCsvIfNeeded() {
           final_amount: Number(raw["Final Amount"]) || 0,
           payment_method: raw["Payment Method"],
           order_status: raw["Order Status"],
-          delivery_type: raw["Delivery Type"],
+          delivery_type: raw["Delivery Type"],    // check header name
           store_id: raw["Store ID"],
           store_location: raw["Store Location"],
           salesperson_id: raw["Salesperson ID"],
@@ -141,6 +140,8 @@ async function importCsvIfNeeded() {
         };
 
         batch.push(row);
+        count++;
+
         if (batch.length >= BATCH_SIZE) {
           insertMany(batch);
           batch.length = 0;
@@ -148,7 +149,19 @@ async function importCsvIfNeeded() {
       })
       .on("end", () => {
         if (batch.length) insertMany(batch);
-        console.log("[CSV IMPORT] Import completed.");
+        console.log("[CSV IMPORT] Import completed. Rows read:", count);
+
+        const finalCount = db
+          .prepare("SELECT COUNT(*) AS cnt FROM sales")
+          .get().cnt;
+        console.log("[CSV IMPORT] Rows in sales table after import:", finalCount);
+
+        if (count === 0) {
+          console.warn(
+            "[CSV IMPORT] WARNING: 0 rows were read from the CSV. Check CSV_URL or Google Drive sharing permissions."
+          );
+        }
+
         resolve();
       })
       .on("error", (err) => {
