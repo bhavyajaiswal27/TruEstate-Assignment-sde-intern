@@ -247,7 +247,7 @@ Central UI state management:
 #### `services/api.js`
 Configured axios instance:
 ```javascript
-baseURL: "http://localhost:4000/api"
+baseURL: "https://truestate-assignment-sde-intern.onrender.com"
 ```
 
 ### 2.5 Dashboard Page (`pages/Dashboard.jsx`)
@@ -285,7 +285,7 @@ Server ready - CSV never needed again
 ### 3.2 Dashboard Request-Response Flow
 
 ```
-User loads http://localhost:5173
+User loads https://truestate-alpha.vercel.app/
     ↓
 Dashboard mounts
     ↓
@@ -415,7 +415,7 @@ Start frontend:
 npm run dev
 ```
 
-Open browser at `http://localhost:5173`
+Open browser at `https://truestate-alpha.vercel.app/`
 
 ## ⚙️ Configuration
 

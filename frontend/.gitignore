@@ -25,3 +25,5 @@ dist-ssr
 
 backend/sales.db
 backend/*.db
+
+.vercel
