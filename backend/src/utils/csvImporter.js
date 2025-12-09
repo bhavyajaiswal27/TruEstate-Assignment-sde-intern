@@ -1,4 +1,6 @@
-const axios = require("axios");
+// src/utils/csvImporter.js
+const fs = require("fs");
+const path = require("path");
 const csv = require("csv-parser");
 const { db } = require("../config/database");
 
@@ -7,33 +9,27 @@ const BATCH_SIZE = 1000;
 async function importCsvIfNeeded() {
   // 1. Check if table exists and has data
   const table = db
-    .prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='sales'"
-    )
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sales'")
     .get();
 
   if (table) {
-    const row = db
-      .prepare("SELECT COUNT(*) AS cnt FROM sales")
-      .get();
+    const row = db.prepare("SELECT COUNT(*) AS cnt FROM sales").get();
     if (row.cnt > 0) {
-      console.log("[CSV IMPORT] sales table already populated, skipping import. Row count:", row.cnt);
+      console.log(
+        "[CSV IMPORT] sales table already populated, skipping import. Row count:",
+        row.cnt
+      );
       return;
     }
   }
 
-  const csvUrl = process.env.CSV_URL;
-  if (!csvUrl) {
-    throw new Error("CSV_URL is not set in environment");
+  // 2. Read local CSV (tracked via Git LFS)
+  const csvPath = path.join(__dirname, "..", "..", "data", "truestate_assignment_dataset.csv");
+  if (!fs.existsSync(csvPath)) {
+    throw new Error(`[CSV IMPORT] CSV file not found at: ${csvPath}`);
   }
 
-  console.log("[CSV IMPORT] Downloading CSV from:", csvUrl);
-
-  const response = await axios({
-    method: "GET",
-    url: csvUrl,
-    responseType: "stream",
-  });
+  console.log("[CSV IMPORT] Reading local CSV:", csvPath);
 
   const insertStmt = db.prepare(`
     INSERT INTO sales (
@@ -106,10 +102,9 @@ async function importCsvIfNeeded() {
     const batch = [];
     let count = 0;
 
-    response.data
+    fs.createReadStream(csvPath)
       .pipe(csv())
       .on("data", (raw) => {
-        // Map CSV headers exactly as they appear in your CSV
         const row = {
           transaction_id: raw["Transaction ID"],
           date: raw["Date"],
@@ -122,8 +117,8 @@ async function importCsvIfNeeded() {
           customer_type: raw["Customer Type"],
           product_id: raw["Product ID"],
           product_name: raw["Product Name"],
-          brand: raw["Brand"],
-          product_category: raw["Category"],      // check header name
+          brand: raw["Brand    Product"] || raw["Brand"] || null,
+          product_category: raw["Category"],
           tags: raw["Tags"],
           quantity: Number(raw["Quantity"]) || 0,
           price_per_unit: Number(raw["Price per Unit"]) || 0,
@@ -132,7 +127,8 @@ async function importCsvIfNeeded() {
           final_amount: Number(raw["Final Amount"]) || 0,
           payment_method: raw["Payment Method"],
           order_status: raw["Order Status"],
-          delivery_type: raw["Delivery Type"],    // check header name
+          delivery_type:
+            raw["Delivery    Type"] || raw["Delivery Type"] || null,
           store_id: raw["Store ID"],
           store_location: raw["Store Location"],
           salesperson_id: raw["Salesperson ID"],
@@ -149,18 +145,15 @@ async function importCsvIfNeeded() {
       })
       .on("end", () => {
         if (batch.length) insertMany(batch);
-        console.log("[CSV IMPORT] Import completed. Rows read:", count);
 
+        console.log("[CSV IMPORT] Import completed. Rows read:", count);
         const finalCount = db
           .prepare("SELECT COUNT(*) AS cnt FROM sales")
           .get().cnt;
-        console.log("[CSV IMPORT] Rows in sales table after import:", finalCount);
-
-        if (count === 0) {
-          console.warn(
-            "[CSV IMPORT] WARNING: 0 rows were read from the CSV. Check CSV_URL or Google Drive sharing permissions."
-          );
-        }
+        console.log(
+          "[CSV IMPORT] Rows in sales table after import:",
+          finalCount
+        );
 
         resolve();
       })
